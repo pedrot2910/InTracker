@@ -1,0 +1,5 @@
+/* css-lint disable unknown-at-rules */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
