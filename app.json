@@ -2,6 +2,7 @@
   "expo": {
     "name": "ReUse",
     "slug": "ReUse",
+    "backgroundColor": "#f4f7f5",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -18,6 +19,7 @@
       }
     },
     "android": {
+      "backgroundColor": "#f4f7f5",
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyBJYMSpc_CZLfcxF2TeuVMBk1JO48Wxbqc"

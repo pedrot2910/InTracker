@@ -94,4 +94,49 @@ export default function HomeScreen() {
       </View>
     </ScrollView>
   );
+
+  /*const { location, status, error, isLoading } = useLiveLocation();
+
+  console.log("Renderizando tracker:", {
+    location,
+    status,
+    error,
+    isLoading,
+  });
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>Tracker Intracampus</Text>
+
+      <Text style={styles.text}>Status: {status}</Text>
+
+      <Text style={styles.text}>Carregando: {isLoading ? "Sim" : "Não"}</Text>
+
+      {error && <Text style={styles.error}>Erro: {error}</Text>}
+
+      {!location ? (
+        <Text style={styles.text}>Nenhuma localização disponível.</Text>
+      ) : (
+        <View style={styles.card}>
+          <Text style={styles.text}>Ônibus: {location.busId}</Text>
+
+          <Text style={styles.text}>Latitude: {location.latitude}</Text>
+
+          <Text style={styles.text}>Longitude: {location.longitude}</Text>
+
+          <Text style={styles.text}>
+            Velocidade: {location.velocidade} km/h
+          </Text>
+
+          <Text style={styles.text}>Satélites: {location.satelites}</Text>
+
+          <Text style={styles.text}>
+            GPS: {location.gpsFix ? "Com sinal" : "Sem sinal"}
+          </Text>
+
+          <Text style={styles.text}>HDOP: {location.hdop}</Text>
+        </View>
+      )}
+    </View>
+  );*/
 }

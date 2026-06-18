@@ -1,7 +1,8 @@
 import * as Location from "expo-location";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
-import { WebView } from "react-native-webview";
+import { WebView, WebViewMessageEvent } from "react-native-webview";
+import { useLiveLocation } from "../../hooks/useLiveLocation";
 
 type LatLng = { latitude: number; longitude: number };
 
@@ -97,200 +98,973 @@ const TEMPO_ENTRE_PONTOS = 1500; // 1.5 segundos
 
 export default function MapScreen() {
   const webViewRef = useRef<WebView>(null);
+
   const [userLocation, setUserLocation] = useState<LatLng | null>(null);
-  const [busData, setBusData] = useState({
-    pontoAnteriorIndex: 0,
-    pontoProximoIndex: 1,
-  });
 
+  const [mapReady, setMapReady] = useState(false);
+
+  const {
+    location: busLocation,
+    status: socketStatus,
+    error: socketError,
+  } = useLiveLocation();
+
+  console.log("Status do socket:", socketStatus);
+  console.log("Localização do ônibus:", busLocation);
+  console.log("Erro do socket:", socketError);
+
+  /*
+   * Obtém a localização do usuário pelo celular.
+   */
   useEffect(() => {
-    (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") return;
-      const loc = await Location.getCurrentPositionAsync({});
-      setUserLocation(loc.coords);
-    })();
+    async function loadUserLocation() {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+
+        if (status !== "granted") {
+          console.log("Permissão de localização não concedida");
+
+          return;
+        }
+
+        const currentLocation = await Location.getCurrentPositionAsync({});
+
+        setUserLocation({
+          latitude: currentLocation.coords.latitude,
+
+          longitude: currentLocation.coords.longitude,
+        });
+      } catch (error) {
+        console.error("Erro ao obter localização do usuário:", error);
+      }
+    }
+
+    void loadUserLocation();
   }, []);
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setBusData((prev) => {
-        const proximo =
-          (prev.pontoProximoIndex + 1) % ROTA_COMPLETA_ONIBUS.length;
-        return {
-          pontoAnteriorIndex: prev.pontoProximoIndex,
-          pontoProximoIndex: proximo,
-        };
-      });
-    }, TEMPO_ENTRE_PONTOS);
+  /*
+   * HTML que será exibido dentro da WebView.
+   */
+  const mapHtml = useMemo(
+    () => `
+      <!DOCTYPE html>
+      <html lang="pt-BR">
+        <head>
+          <meta charset="UTF-8" />
 
-    return () => clearInterval(interval);
-  }, []);
+          <meta
+            name="viewport"
+            content="
+              width=device-width,
+              initial-scale=1.0,
+              maximum-scale=1.0,
+              user-scalable=no
+            "
+          />
 
-  useEffect(() => {
-    if (webViewRef.current) {
-      const isIda = busData.pontoProximoIndex < rotaIda.length;
-      let rotaRestante = [];
-      let corRota = "";
+          <link
+            rel="stylesheet"
+            href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+          />
 
-      if (isIda) {
-        rotaRestante = rotaIda.slice(busData.pontoProximoIndex);
-        corRota = "#005a9c"; // Azul
-      } else {
-        rotaRestante = ROTA_COMPLETA_ONIBUS.slice(busData.pontoProximoIndex);
-        corRota = "#009a44"; // Verde
+          <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+          <style>
+            html,
+            body,
+            #map {
+              width: 100%;
+              height: 100%;
+              margin: 0;
+              padding: 0;
+            }
+
+            body {
+              background-color: #f0f0f0;
+            }
+
+            #map {
+              background-color: #f0f0f0;
+            }
+
+            .leaflet-control-attribution {
+              display: none;
+            }
+
+            .bus-marker-container {
+              display: flex;
+              align-items: flex-end;
+              justify-content: center;
+            }
+
+            .custom-pin {
+              width: 22px;
+              height: 22px;
+              background-color: #e63946;
+
+              border-radius: 50% 50% 50% 0;
+              border: 3px solid white;
+
+              transform: rotate(-45deg);
+
+              display: flex;
+              align-items: center;
+              justify-content: center;
+
+              box-shadow:
+                2px 2px 5px rgba(0, 0, 0, 0.4);
+            }
+
+            .custom-pin span {
+              transform: rotate(45deg);
+              font-size: 12px;
+            }
+
+            .stop-pin {
+              width: 10px;
+              height: 10px;
+
+              background-color: white;
+              border: 4px solid #005a9c;
+              border-radius: 50%;
+
+              box-shadow:
+                1px 1px 4px rgba(0, 0, 0, 0.5);
+            }
+          </style>
+        </head>
+
+        <body>
+          <div id="map"></div>
+
+          <script>
+            (function () {
+              function sendMessage(data) {
+                if (window.ReactNativeWebView) {
+                  window.ReactNativeWebView.postMessage(
+                    JSON.stringify(data)
+                  );
+                }
+              }
+
+              window.onerror = function (
+                message,
+                source,
+                line,
+                column
+              ) {
+                sendMessage({
+                  type: "JS_ERROR",
+                  message: String(message),
+                  line: line,
+                  column: column
+                });
+
+                return false;
+              };
+
+              try {
+                if (typeof L === "undefined") {
+                  throw new Error(
+                    "A biblioteca Leaflet não foi carregada."
+                  );
+                }
+
+                var map = L.map("map", {
+                  zoomControl: false
+                }).setView(
+                  [-3.688, -40.353],
+                  15
+                );
+
+                L.tileLayer(
+                  "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+                  {
+                    maxZoom: 19
+                  }
+                ).addTo(map);
+
+                L.control
+                  .zoom({
+                    position: "bottomright"
+                  })
+                  .addTo(map);
+
+                var userMarker = null;
+                var busMarker = null;
+
+                var animationFrameId = null;
+                var animationStartTime = null;
+
+                var busIcon = L.divIcon({
+                  html:
+                    '<div class="custom-pin">' +
+                    "<span>🚌</span>" +
+                    "</div>",
+
+                  className:
+                    "bus-marker-container",
+
+                  iconSize: [32, 38],
+                  iconAnchor: [16, 38]
+                });
+
+                var stopIcon = L.divIcon({
+                  html:
+                    '<div class="stop-pin"></div>',
+
+                  className: "",
+                  iconSize: [18, 18],
+                  iconAnchor: [9, 9]
+                });
+
+                var rotaIdaCoords =
+                  ${JSON.stringify(rotaIda)};
+
+                var rotaVoltaCoords =
+                  ${JSON.stringify(rotaVolta)};
+
+                var stopsLocs =
+                  ${JSON.stringify(paradasPrincipais)};
+
+                var activeRouteLine = L.polyline(
+                  [],
+                  {
+                    color: "#005a9c",
+                    weight: 6,
+                    opacity: 0.85,
+                    lineCap: "round",
+                    lineJoin: "round"
+                  }
+                ).addTo(map);
+
+                var activeDirection = null;
+
+                var activeSegmentIndex = 0;
+
+                /*
+                 * Desenha as paradas.
+                 */
+                stopsLocs.forEach(
+                  function (stop) {
+                    L.marker(
+                      [
+                        stop.latitude,
+                        stop.longitude
+                      ],
+                      {
+                        icon: stopIcon,
+                        zIndexOffset: -100
+                      }
+                    )
+                      .addTo(map)
+                      .bindPopup(
+                        "<b>🚏 Parada:</b><br>" +
+                        stop.nome
+                      );
+                  }
+                );
+
+                function findNearestRouteSegment(
+                  location,
+                  route
+                ) {
+                  var bestMatch = {
+                    distanceSquared: Infinity,
+                    segmentIndex: 0,
+                    projectedLocation: {
+                      latitude: route[0].latitude,
+                      longitude: route[0].longitude
+                    }
+                  };
+
+                  for (
+                    var index = 0;
+                    index < route.length - 1;
+                    index++
+                  ) {
+                    var start = route[index];
+                    var end = route[index + 1];
+
+                    var latitudeDelta =
+                      end.latitude - start.latitude;
+
+                    var longitudeDelta =
+                      end.longitude - start.longitude;
+
+                    var segmentLengthSquared =
+                      latitudeDelta * latitudeDelta +
+                      longitudeDelta * longitudeDelta;
+
+                    var progress = 0;
+
+                    if (segmentLengthSquared > 0) {
+                      progress =
+                        (
+                          (
+                            location.latitude -
+                            start.latitude
+                          ) *
+                            latitudeDelta +
+                          (
+                            location.longitude -
+                            start.longitude
+                          ) *
+                            longitudeDelta
+                        ) /
+                        segmentLengthSquared;
+                    }
+
+                    progress = Math.max(
+                      0,
+                      Math.min(1, progress)
+                    );
+
+                    var projectedLatitude =
+                      start.latitude +
+                      latitudeDelta * progress;
+
+                    var projectedLongitude =
+                      start.longitude +
+                      longitudeDelta * progress;
+
+                    var distanceLatitude =
+                      location.latitude -
+                      projectedLatitude;
+
+                    var distanceLongitude =
+                      location.longitude -
+                      projectedLongitude;
+
+                    var distanceSquared =
+                      distanceLatitude *
+                        distanceLatitude +
+                      distanceLongitude *
+                        distanceLongitude;
+
+                    if (
+                      distanceSquared <
+                      bestMatch.distanceSquared
+                    ) {
+                      bestMatch = {
+                        distanceSquared:
+                          distanceSquared,
+
+                        segmentIndex:
+                          index,
+
+                        projectedLocation: {
+                          latitude:
+                            projectedLatitude,
+
+                          longitude:
+                            projectedLongitude
+                        }
+                      };
+                    }
+                  }
+
+                  return bestMatch;
+                }
+
+                function selectActiveRoute(location) {
+                  var idaMatch = findNearestRouteSegment(
+                    location,
+                    rotaIdaCoords
+                  );
+
+                  var voltaMatch = findNearestRouteSegment(
+                    location,
+                    rotaVoltaCoords
+                  );
+
+                  var selectedDirection =
+                    activeDirection;
+
+                  if (!selectedDirection) {
+                    selectedDirection =
+                      idaMatch.distanceSquared <=
+                      voltaMatch.distanceSquared
+                        ? "ida"
+                        : "volta";
+                  } else {
+                    var currentMatch =
+                      selectedDirection === "ida"
+                        ? idaMatch
+                        : voltaMatch;
+                    
+                    var otherMatch =
+                      selectedDirection === "ida"
+                        ? voltaMatch
+                        : idaMatch;
+
+                    var currentRoute =
+                      selectedDirection === "ida"
+                        ? rotaIdaCoords
+                        : rotaVoltaCoords;
+
+                    var isNearRouteEnd =
+                      activeSegmentIndex >=
+                      currentRoute.length - 2;
+
+                    var otherRouteIsClearlyCloser =
+                      otherMatch.distanceSquared <
+                      currentMatch.distanceSquared * 0.45;
+
+                    if (
+                      otherRouteIsClearlyCloser ||
+                      (
+                        isNearRouteEnd &&
+                        otherMatch.distanceSquared <
+                        currentMatch.distanceSquared
+                      )
+                    ) {
+                      selectedDirection =
+                        selectedDirection === "ida"
+                          ? "volta"
+                          : "ida";
+                      }
+                  }
+
+                  var selectedRoute =
+                    selectedDirection === "ida"
+                      ? rotaIdaCoords
+                      : rotaVoltaCoords;
+
+                  var selectedMatch =
+                    selectedDirection === "ida"
+                      ? idaMatch
+                      : voltaMatch;
+
+                  if (
+                    activeDirection !==
+                    selectedDirection
+                  ) {
+                    activeSegmentIndex =
+                      selectedMatch.segmentIndex;  
+                  } else {
+                    activeSegmentIndex =
+                      Math.max(
+                        activeSegmentIndex,
+                        selectedMatch.segmentIndex                        
+                      )  
+                  }
+
+                  activeDirection =
+                    selectedDirection;
+
+                  return {
+                    direction: selectedDirection,
+                    route: selectedRoute,
+                    match: selectedMatch
+                  };
+                }
+
+                function updateRemainingRoute(
+                  busLocation
+                ) {
+                  var previousDirection =
+                    activeDirection;
+
+                  var selection =
+                    selectActiveRoute(
+                      busLocation
+                    );
+
+                  var route =
+                    selection.route;
+
+                  var routeColor =
+                    selection.direction === "ida"
+                      ? "#005a9c"
+                      : "#009a44";
+
+                  /*
+                  * A linha começa na projeção da
+                  * posição do ônibus sobre a rota.
+                  */
+                  var remainingCoordinates = [
+                    [
+                      selection.match
+                        .projectedLocation.latitude,
+
+                      selection.match
+                        .projectedLocation.longitude
+                    ]
+                  ];
+
+                  /*
+                  * Usa activeSegmentIndex para impedir
+                  * que trechos já percorridos reapareçam.
+                  */
+                  for (
+                    var index =
+                      activeSegmentIndex + 1;
+
+                    index < route.length;
+
+                    index++
+                  ) {
+                    remainingCoordinates.push([
+                      route[index].latitude,
+                      route[index].longitude
+                    ]);
+                  }
+
+                  activeRouteLine.setStyle({
+                    color: routeColor
+                  });
+
+                  activeRouteLine.setLatLngs(
+                    remainingCoordinates
+                  );
+
+                  if (busMarker) {
+                    busMarker.setPopupContent(
+                      "<b>Ônibus IntraCampus</b>" +
+                      "<br>Sentido: " +
+                      (
+                        selection.direction === "ida"
+                          ? "Ida"
+                          : "Volta"
+                      )
+                    );
+                  }
+
+                  if (
+                    previousDirection !==
+                    activeDirection
+                  ) {
+                    sendMessage({
+                      type: "ROUTE_CHANGED",
+                      direction:
+                        activeDirection
+                    });
+                  }
+                }
+
+                function animateBus(
+                  currentTime,
+                  startLocation,
+                  endLocation,
+                  duration
+                ) {
+                  if (
+                    animationStartTime === null
+                  ) {
+                    animationStartTime =
+                      currentTime;
+                  }
+
+                  var elapsed =
+                    currentTime -
+                    animationStartTime;
+
+                  var progress = Math.min(
+                    elapsed /
+                      Math.max(duration, 1),
+                    1
+                  );
+
+                  /*
+                   * Movimento mais suave.
+                   */
+                  var easedProgress =
+                    1 -
+                    Math.pow(
+                      1 - progress,
+                      3
+                    );
+
+                  var currentLatitude =
+                    startLocation.latitude +
+                    (
+                      endLocation.latitude -
+                      startLocation.latitude
+                    ) *
+                      easedProgress;
+
+                  var currentLongitude =
+                    startLocation.longitude +
+                    (
+                      endLocation.longitude -
+                      startLocation.longitude
+                    ) *
+                      easedProgress;
+
+                  var currentBusLocation = {
+                    latitude: currentLatitude,
+                    longitude: currentLongitude
+                  };
+
+                  if (busMarker) {
+                    busMarker.setLatLng([
+                      currentLatitude,
+                      currentLongitude
+                    ]);
+                    updateRemainingRoute(
+                      currentBusLocation
+                    )
+                  }
+
+                  if (progress < 1) {
+                    animationFrameId =
+                      requestAnimationFrame(
+                        function (time) {
+                          animateBus(
+                            time,
+                            startLocation,
+                            endLocation,
+                            duration
+                          );
+                        }
+                      );
+                  }
+                }
+
+                /*
+                 * Recebe do React Native a nova
+                 * posição do ônibus.
+                 */
+                window.updateBusPosition =
+                  function (
+                    newLocation,
+                    duration
+                  ) {
+                    try {
+                      if (
+                        !newLocation ||
+                        typeof newLocation.latitude !==
+                          "number" ||
+                        typeof newLocation.longitude !==
+                          "number"
+                      ) {
+                        throw new Error(
+                          "Localização inválida recebida pelo mapa."
+                        );
+                      }
+
+                      var coordinates = [
+                        newLocation.latitude,
+                        newLocation.longitude
+                      ];
+
+                      /*
+                       * Primeira posição recebida:
+                       * cria o marcador.
+                       */
+                      if (!busMarker) {
+                        busMarker = L.marker(
+                          coordinates,
+                          {
+                            icon: busIcon,
+                            zIndexOffset: 1000
+                          }
+                        )
+                          .addTo(map)
+                          .bindPopup(
+                            "<b>Ônibus IntraCampus</b>"
+                          );
+
+                        map.setView(
+                          coordinates,
+                          17
+                        );
+
+                        updateRemainingRoute(
+                          newLocation
+                        );
+
+                        sendMessage({
+                          type: "BUS_UPDATED",
+                          latitude:
+                            newLocation.latitude,
+                          longitude:
+                            newLocation.longitude
+                        });
+
+                        return;
+                      }
+
+                      /*
+                       * Posição atual do marcador.
+                       */
+                      var currentPosition =
+                        busMarker.getLatLng();
+
+                      var startLocation = {
+                        latitude:
+                          currentPosition.lat,
+
+                        longitude:
+                          currentPosition.lng
+                      };
+
+                      if (animationFrameId) {
+                        cancelAnimationFrame(
+                          animationFrameId
+                        );
+                      }
+
+                      animationStartTime = null;
+
+                      animationFrameId =
+                        requestAnimationFrame(
+                          function (time) {
+                            animateBus(
+                              time,
+                              startLocation,
+                              newLocation,
+                              duration || 1200
+                            );
+                          }
+                        );
+
+                      sendMessage({
+                        type: "BUS_UPDATED",
+                        latitude:
+                          newLocation.latitude,
+                        longitude:
+                          newLocation.longitude
+                      });
+                    } catch (error) {
+                      sendMessage({
+                        type: "JS_ERROR",
+                        message:
+                          error &&
+                          error.message
+                            ? error.message
+                            : String(error)
+                      });
+                    }
+                  };
+
+                /*
+                 * Recebe a posição do usuário.
+                 */
+                window.updateUserPosition =
+                  function (userLocation) {
+                    try {
+                      if (
+                        !userLocation ||
+                        typeof userLocation.lat !==
+                          "number" ||
+                        typeof userLocation.lng !==
+                          "number"
+                      ) {
+                        return;
+                      }
+
+                      var coordinates = [
+                        userLocation.lat,
+                        userLocation.lng
+                      ];
+
+                      if (userMarker) {
+                        userMarker.setLatLng(
+                          coordinates
+                        );
+
+                        return;
+                      }
+
+                      userMarker =
+                        L.circleMarker(
+                          coordinates,
+                          {
+                            color: "white",
+                            fillColor: "#4285f4",
+                            fillOpacity: 1,
+                            radius: 8,
+                            weight: 2
+                          }
+                        )
+                          .addTo(map)
+                          .bindPopup(
+                            "<b>Você está aqui</b>"
+                          );
+                    } catch (error) {
+                      sendMessage({
+                        type: "JS_ERROR",
+                        message:
+                          error &&
+                          error.message
+                            ? error.message
+                            : String(error)
+                      });
+                    }
+                  };
+
+                /*
+                 * Aguarda a WebView calcular o
+                 * tamanho do mapa.
+                 */
+                setTimeout(function () {
+                  map.invalidateSize();
+
+                  sendMessage({
+                    type: "MAP_READY"
+                  });
+                }, 300);
+              } catch (error) {
+                sendMessage({
+                  type: "JS_ERROR",
+                  message:
+                    error && error.message
+                      ? error.message
+                      : String(error)
+                });
+              }
+            })();
+          </script>
+        </body>
+      </html>
+    `,
+    [],
+  );
+
+  const mapSource = useMemo(
+    () => ({
+      html: mapHtml,
+    }),
+    [mapHtml],
+  );
+
+  /*
+   * Recebe mensagens enviadas pelo HTML.
+   */
+  function handleMapMessage(event: WebViewMessageEvent) {
+    try {
+      const message = JSON.parse(event.nativeEvent.data);
+
+      console.log("Mensagem recebida da WebView:", message);
+
+      if (message.type === "MAP_READY") {
+        console.log("Leaflet inicializado com sucesso");
+
+        setMapReady(true);
+        return;
       }
 
-      const pontoStart = ROTA_COMPLETA_ONIBUS[busData.pontoAnteriorIndex];
-      const pontoEnd = ROTA_COMPLETA_ONIBUS[busData.pontoProximoIndex];
+      if (message.type === "BUS_UPDATED") {
+        console.log("Marcador do ônibus atualizado:", message);
 
-      const script = `
-        updateMap(
-          ${JSON.stringify(pontoStart)},
-          ${JSON.stringify(pontoEnd)},
-          ${JSON.stringify(rotaRestante)}, 
-          "${corRota}",
-          ${TEMPO_ENTRE_PONTOS},
-          ${JSON.stringify(userLocation ? { lat: userLocation.latitude, lng: userLocation.longitude } : null)},
-          ${JSON.stringify(paradasPrincipais)}
-        );
-        true;
-      `;
-      webViewRef.current.injectJavaScript(script);
+        return;
+      }
+
+      if (message.type === "JS_ERROR") {
+        console.error("Erro dentro do mapa:", message.message);
+      }
+
+      if (message.type === "ROUTE_CHANGED") {
+        console.log("Sentido atual do ônibus: ", message.direction);
+
+        return;
+      }
+    } catch {
+      console.log(
+        "Mensagem não reconhecida da WebView:",
+        event.nativeEvent.data,
+      );
     }
-  }, [userLocation, busData]);
+  }
 
-  const mapHtml = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-      <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-      <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-      <style>
-        body { padding: 0; margin: 0; }
-        #map { height: 100vh; width: 100vw; background-color: #f0f0f0; }
-        .leaflet-control-attribution { display: none; }
-        
-        .bus-marker-container { 
-            display: flex; align-items: flex-end; justify-content: center; 
-        }
-        
-        /* PIN DO ÔNIBUS */
-        .custom-pin {
-            width: 18px; height: 18px; background-color: #e63946; 
-            border-radius: 50% 50% 50% 0; transform: rotate(-45deg); 
-            display: flex; align-items: center; justify-content: center;
-            border: 3px solid white; box-shadow: 2px 2px 5px rgba(0,0,0,0.4); 
-            margin-bottom: 2px; 
-            z-index: 1000; /* Garante que o ônibus fique por cima de tudo */
-        }
-        .custom-pin span {
-            transform: rotate(45deg); font-size: 10px; margin-bottom: 2px; margin-right: 2px;
-        }
+  /*
+   * Envia ao mapa a localização do ônibus.
+   */
+  useEffect(() => {
+    if (!mapReady || !busLocation || !webViewRef.current) {
+      return;
+    }
 
-        /* NOVO: PIN DAS PARADAS */
-        .stop-pin {
-            width: 10px; height: 10px;
-            background-color: white;
-            border: 4px solid #005a9c; /* Azul escuro igual a rota de ida */
-            border-radius: 50%; /* Bolinha perfeita */
-            box-shadow: 1px 1px 4px rgba(0,0,0,0.5);
-        }
-      </style>
-    </head>
-    <body>
-      <div id="map"></div>
-      <script>
-        var map = L.map('map', { zoomControl: false }).setView([-3.688, -40.353], 15);
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(map);
-        L.control.zoom({ position: 'bottomright' }).addTo(map);
+    const latitude = Number(busLocation.latitude);
 
-        var userMarker, busMarker, dynamicRouteLine;
-        var animFrameId = null;
-        var startTime = null;
-        var paradasDesenhadas = false; // Controle para não redesenhar a parada a cada milissegundo
-        
-        var busIcon = L.divIcon({ 
-            html: '<div class="custom-pin"><span>🚌</span></div>', 
-            className: 'bus-marker-container', iconSize: [30, 36], iconAnchor: [15, 36] 
-        });
+    const longitude = Number(busLocation.longitude);
 
-        // NOVO: Ícone para as paradas
-        var stopIcon = L.divIcon({
-            html: '<div class="stop-pin"></div>',
-            className: '', // Sem classe de animação
-            iconSize: [22, 22],
-            iconAnchor: [11, 11] // Centralizado
-        });
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      console.warn("Coordenadas inválidas do ônibus:", busLocation);
 
-        function animateBus(currentTime, startLoc, endLoc, pathRestante, color, duration) {
-            if (!startTime) startTime = currentTime;
-            var progress = Math.min((currentTime - startTime) / duration, 1);
-            
-            var currentLat = startLoc.latitude + (endLoc.latitude - startLoc.latitude) * progress;
-            var currentLng = startLoc.longitude + (endLoc.longitude - startLoc.longitude) * progress;
-            var currentLatLng = [currentLat, currentLng];
+      return;
+    }
 
-            busMarker.setLatLng(currentLatLng);
-            dynamicRouteLine.setLatLngs([currentLatLng, [endLoc.latitude, endLoc.longitude], ...pathRestante.map(c => [c.latitude, c.longitude])]);
-            dynamicRouteLine.setStyle({ color: color });
+    const position: LatLng = {
+      latitude,
+      longitude,
+    };
 
-            if (progress < 1) {
-                animFrameId = requestAnimationFrame(function(time) {
-                    animateBus(time, startLoc, endLoc, pathRestante, color, duration);
-                });
-            }
-        }
+    console.log("Enviando posição para o mapa:", position);
 
-        // NOVO: Parâmetro stopsLocs recebido no final
-        function updateMap(startLoc, endLoc, pathRestante, color, duration, userLoc, stopsLocs) {
-            
-            // 1. DESENHA AS PARADAS APENAS UMA VEZ
-            if (!paradasDesenhadas && stopsLocs && stopsLocs.length > 0) {
-                stopsLocs.forEach(function(parada) {
-                    L.marker([parada.latitude, parada.longitude], { icon: stopIcon, zIndexOffset: -100 })
-                     .addTo(map)
-                     .bindPopup("<b>🚏 Parada:</b><br>" + parada.nome);
-                });
-                paradasDesenhadas = true; // Marca que já desenhou pra não repetir
-            }
+    webViewRef.current.injectJavaScript(`
+      if (
+        typeof window.updateBusPosition ===
+        "function"
+      ) {
+        window.updateBusPosition(
+          ${JSON.stringify(position)},
+          1200
+        );
+      } else {
+        window.ReactNativeWebView.postMessage(
+          JSON.stringify({
+            type: "JS_ERROR",
+            message:
+              "A função updateBusPosition não existe."
+          })
+        );
+      }
 
-            // O RESTO CONTINUA IGUAL...
-            if (!dynamicRouteLine) {
-                dynamicRouteLine = L.polyline([], { weight: 6, opacity: 0.8, lineCap: 'round', lineJoin: 'round' }).addTo(map);
-            }
-            if (!busMarker) {
-                busMarker = L.marker([startLoc.latitude, startLoc.longitude], { icon: busIcon, zIndexOffset: 1000 }).addTo(map).bindPopup("<b>Ônibus Intra-Campus</b>");
-            }
+      true;
+    `);
+  }, [busLocation, mapReady]);
 
-            if (userLoc) {
-                if (userMarker) { userMarker.setLatLng([userLoc.lat, userLoc.lng]); } 
-                else { userMarker = L.circleMarker([userLoc.lat, userLoc.lng], { color: 'white', fillColor: '#4285F4', fillOpacity: 1, radius: 8, weight: 2 }).addTo(map).bindPopup("<b>Você está aqui</b>"); }
-            }
+  /*
+   * Envia ao mapa a localização do usuário.
+   */
+  useEffect(() => {
+    if (!mapReady || !userLocation || !webViewRef.current) {
+      return;
+    }
 
-            if (animFrameId) cancelAnimationFrame(animFrameId);
-            startTime = null; 
-            
-            animFrameId = requestAnimationFrame(function(time) {
-                animateBus(time, startLoc, endLoc, pathRestante, color, duration);
-            });
-        }
-      </script>
-    </body>
-    </html>
-  `;
+    const userPosition = {
+      lat: userLocation.latitude,
+      lng: userLocation.longitude,
+    };
+
+    webViewRef.current.injectJavaScript(`
+      if (
+        typeof window.updateUserPosition ===
+        "function"
+      ) {
+        window.updateUserPosition(
+          ${JSON.stringify(userPosition)}
+        );
+      }
+
+      true;
+    `);
+  }, [userLocation, mapReady]);
 
   return (
-    <View style={StyleSheet.absoluteFill}>
+    <View style={styles.container}>
       <WebView
         ref={webViewRef}
-        source={{ html: mapHtml }}
-        style={{ flex: 1 }}
+        source={mapSource}
+        style={styles.webView}
         originWhitelist={["*"]}
-        javaScriptEnabled={true}
-        startInLoadingState={true}
+        javaScriptEnabled
+        domStorageEnabled
+        startInLoadingState
+        onMessage={handleMapMessage}
+        onError={(event) => {
+          console.error("Erro nativo da WebView:", event.nativeEvent);
+        }}
+        onHttpError={(event) => {
+          console.error(
+            "Erro HTTP da WebView:",
+            event.nativeEvent.statusCode,
+            event.nativeEvent.url,
+          );
+        }}
         renderLoading={() => (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="#005a9c" />
@@ -302,9 +1076,18 @@ export default function MapScreen() {
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#f0f0f0",
+  },
+
+  webView: {
+    flex: 1,
+    backgroundColor: "#f0f0f0",
+  },
+
   loadingContainer: {
-    position: "absolute",
-    inset: 0,
+    ...StyleSheet.absoluteFillObject,
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: "#f0f0f0",
