@@ -79,6 +79,16 @@ const paradasPrincipais = [
     nome: "SPA (ida)",
   },
   {
+    latitude: -3.684702,
+    longitude: -40.3517338,
+    nome: "Cadeia Estrupativa",
+  },
+  {
+    latitude: -3.6855592,
+    longitude: -40.3410177,
+    nome: "Pedrinhas (Academia B2)",
+  },
+  {
     latitude: -3.6822104457864278,
     longitude: -40.3367839806494,
     nome: "Faculdade de Medicina",
@@ -299,7 +309,7 @@ export default function MapScreen() {
                 var busIcon = L.divIcon({
                   html:
                     '<div class="custom-pin">' +
-                    "<span>🚌</span>" +
+                    "<span></span>" +
                     "</div>",
 
                   className:

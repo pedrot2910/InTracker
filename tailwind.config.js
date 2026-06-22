@@ -4,7 +4,7 @@ const values = Array.from({ length: 101 }, (_, i) => i + "px");
 const safelist = [];
 
 // padding
-["p", "pl", "pr", "pt", "pb"].forEach((prefix) => {
+["p", "pl", "pr", "pt", "pb", "px", "py"].forEach((prefix) => {
   values.forEach((v) => safelist.push(`${prefix}-[${v}]`));
 });
 

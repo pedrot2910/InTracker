@@ -1,7 +1,7 @@
 import { Tabs } from "expo-router";
 
 import { IconSymbol } from "@/components/ui/icon-symbol";
-import { Bell, Bus } from "lucide-react-native";
+import { Bell, Bus, CircleUser } from "lucide-react-native";
 import { useState } from "react";
 import { Text, View } from "react-native";
 import NotificationsModal from "../_components/NotificationsModal";
@@ -44,6 +44,9 @@ export default function TabLayout() {
               {isNotificationsModalVisible && (
                 <NotificationsModal onClose={toggleNotificationsModal} />
               )}
+
+              <View className="w-2 h-2 rounded-full" />
+              <CircleUser size={18} color="#10367d" />
             </View>
           </View>
         </View>

@@ -75,10 +75,10 @@ export function useLiveLocation() {
             ? requestError.message
             : "Erro ao carregar localização";
 
-        console.error(message);
+        console.log(message);
 
         if (screenIsActive) {
-          setError(message);
+          setIsLoading(false);
         }
       }
     }
