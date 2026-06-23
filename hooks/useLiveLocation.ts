@@ -11,6 +11,23 @@ export function useLiveLocation() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  function isValidGpsLocation(location: LocationData) {
+    const gpsFix = location.gpsFix ?? location.gps_fix;
+
+    const satelites = Number(location.satelites);
+    const latitude = Number(location.latitude);
+    const longitude = Number(location.longitude);
+
+    return (
+      gpsFix === true &&
+      Number.isFinite(satelites) &&
+      satelites >= 4 &&
+      Number.isFinite(latitude) &&
+      Number.isFinite(longitude) &&
+      latitude !== 0 &&
+      longitude !== 0
+    );
+  }
   useEffect(() => {
     let screenIsActive = true;
 
@@ -38,6 +55,11 @@ export function useLiveLocation() {
       },
 
       onLocation: (newLocation) => {
+        if (!isValidGpsLocation(newLocation)) {
+          console.log("Localização ignorada no hook:", newLocation);
+
+          return;
+        }
         console.log("Atualizando estado com localização:", newLocation);
 
         setLocation({ ...newLocation });

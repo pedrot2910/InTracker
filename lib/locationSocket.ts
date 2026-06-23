@@ -2,9 +2,7 @@ import { Client, type IMessage } from "@stomp/stompjs";
 import "text-encoding";
 import { LocationData } from "../types/location";
 
-const WS_URL = process.env.EXPO_PUBLIC_WS_URL;
-
-interface locationSocketCallbacks {
+interface LocationSocketCallbacks {
   onLocation: (location: LocationData) => void;
   onConnected?: () => void;
   onDisconnected?: () => void;
@@ -16,9 +14,19 @@ export function connectLocationSocket({
   onConnected,
   onDisconnected,
   onError,
-}: locationSocketCallbacks): () => void {
+}: LocationSocketCallbacks): () => void {
+  const WS_URL = process.env.EXPO_PUBLIC_WS_URL?.trim();
+
+  console.log("EXPO_PUBLIC_WS_URL:", WS_URL);
+
   if (!WS_URL) {
-    throw new Error("WebSocket URL não foi configurado");
+    const message =
+      "WebSocket URL não foi configurado. Verifique o .env.production e reinicie o Expo.";
+
+    console.error(message);
+    onError?.(message);
+
+    return () => {};
   }
 
   const client = new Client({
@@ -26,7 +34,6 @@ export function connectLocationSocket({
     reconnectDelay: 5000,
     heartbeatIncoming: 10000,
     heartbeatOutgoing: 10000,
-
     forceBinaryWSFrames: true,
     appendMissingNULLonIncoming: true,
 
@@ -45,10 +52,13 @@ export function connectLocationSocket({
     client.subscribe("/topic/location", (message: IMessage) => {
       try {
         const location = JSON.parse(message.body) as LocationData;
+
         console.log("Localização recebida:", location);
+
         onLocation(location);
       } catch (error) {
         console.error("Erro ao interpretar a localização:", error);
+
         onError?.("O backend enviou uma localização inválida");
       }
     });
@@ -56,11 +66,13 @@ export function connectLocationSocket({
 
   client.onWebSocketClose = () => {
     console.log("WebSocket desconectado");
+
     onDisconnected?.();
   };
 
   client.onWebSocketError = (error) => {
     console.log("Erro no WebSocket:", error);
+
     onError?.("Erro de conexão com o WebSocket.");
   };
 

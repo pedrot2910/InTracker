@@ -127,29 +127,51 @@ export default function MapScreen() {
    * Obtém a localização do usuário pelo celular.
    */
   useEffect(() => {
-    async function loadUserLocation() {
+    let subscription: Location.LocationSubscription | null = null;
+    let isMounted = true;
+
+    async function startWatchingUserLocation() {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
 
         if (status !== "granted") {
           console.log("Permissão de localização não concedida");
-
           return;
         }
 
-        const currentLocation = await Location.getCurrentPositionAsync({});
+        subscription = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.High,
+            timeInterval: 3000,
+            distanceInterval: 5,
+          },
+          (currentLocation) => {
+            if (!isMounted) return;
 
-        setUserLocation({
-          latitude: currentLocation.coords.latitude,
+            const newUserLocation = {
+              latitude: currentLocation.coords.latitude,
+              longitude: currentLocation.coords.longitude,
+            };
 
-          longitude: currentLocation.coords.longitude,
-        });
+            console.log("Minha localização atualizada:", newUserLocation);
+
+            setUserLocation(newUserLocation);
+          },
+        );
       } catch (error) {
-        console.error("Erro ao obter localização do usuário:", error);
+        console.error("Erro ao acompanhar localização do usuário:", error);
       }
     }
 
-    void loadUserLocation();
+    void startWatchingUserLocation();
+
+    return () => {
+      isMounted = false;
+
+      if (subscription) {
+        subscription.remove();
+      }
+    };
   }, []);
 
   /*
@@ -199,6 +221,35 @@ export default function MapScreen() {
 
             .leaflet-control-attribution {
               display: none;
+            }
+
+            .focus-bus-button {
+              width: 20px:
+              height: 20px;
+
+              background-color: #ffffff;
+              border: 1px solid rgba(0, 0, 0, 0.12);
+
+              display: flex;
+              align-items: center;
+              justify-content: center;
+
+              box-shadow: 0 3px 8px rgba(0, 0, 0, 0.25);
+
+              cursor: pointer;
+            }
+
+            .focus-bus-button:active {
+              background-color: #eef6ff;
+              transform: scale(0.95);
+            }
+
+            .focus-bus-button svg {
+              width: 24px;
+              height: 24px;
+              stroke: #1a73e8;
+              stroke-width: 2.5;
+              fill: none;
             }
 
             .bus-marker-container {
@@ -299,6 +350,49 @@ export default function MapScreen() {
                     position: "bottomright"
                   })
                   .addTo(map);
+
+                var FoscusBusControl = L.Control.extend({
+                  options: {
+                    position: "bottomright"
+                  },
+
+                  onAdd: function () {
+                    var container = L.DomUtil.create(
+                      "div",
+                      "leaflet-bar leaflet-control"
+                    );
+
+                    var button = L.DomUtil.create(
+                      "button",
+                      "focus-bus-button",
+                      container
+                    );
+
+                    button.type = "button";
+                    button.title = "Localizar ônibus";
+
+                    button.innerHTML =
+                      '<svg viewBox="0 0 24 24">' +
+                      '<circle cx="12" cy="12" r="7"></circle>' +
+                      '<line x1="12" y1="2" x2="12" y2="5"></line>' +
+                      '<line x1="12" y1="19" x2="12" y2="22"></line>' +
+                      '<line x1="2" y1="12" x2="5" y2="12"></line>' +
+                      '<line x1="19" y1="12" x2="22" y2="12"></line>' +
+                      '<circle cx="12" cy="12" r="2"></circle>' +
+                      '</svg>';
+                    
+                    L.DomEvent.disableClickPropagation(container);
+                    L.DomEvent.disableScrollPropagation(container);
+
+                    L.DomEvent.on(button, "click", function () {
+                      window.focusBusOnMap();
+                    });
+
+                    return container;
+                  }
+                });
+
+                map.addControl(new FoscusBusControl());
 
                 var userMarker = null;
                 var busMarker = null;
@@ -848,6 +942,7 @@ export default function MapScreen() {
                       });
                     }
                   };
+                
 
                 /*
                  * Recebe a posição do usuário.
@@ -905,10 +1000,48 @@ export default function MapScreen() {
                     }
                   };
 
-                /*
-                 * Aguarda a WebView calcular o
-                 * tamanho do mapa.
-                 */
+                window.focusBusOnMap = function () {
+                  try {
+                    if (!busMarker) {
+                      sendMessage({
+                        type: "NO_BUS_LOCATION",
+                        message: "Ainda não existe localização do ônibus no mapa."
+                      });
+
+                      return;
+                    }
+
+                    var busPosition = busMarker.getLatLng();
+
+                    map.flyTo(
+                      [
+                        busPosition.lat,
+                        busPosition.lng
+                      ],
+                      17,
+                      {
+                        animate: true,
+                        duration: 0.8
+                      }
+                    );
+
+                    busMarker.openPopup();
+
+                    sendMessage({
+                      type: "BUS_FOCUSED",
+                      latitude: busPosition.lat,
+                      longitude: busPosition.lng
+                    });
+                  } catch (error) {
+                    sendMessage({
+                      type: "JS_ERROR",
+                      message:
+                        error && error.message
+                          ? error.message
+                          : String(error)
+                    });
+                  }
+                };
                 setTimeout(function () {
                   map.invalidateSize();
 
@@ -916,16 +1049,17 @@ export default function MapScreen() {
                     type: "MAP_READY"
                   });
                 }, 300);
-              } catch (error) {
-                sendMessage({
-                  type: "JS_ERROR",
-                  message:
-                    error && error.message
-                      ? error.message
-                      : String(error)
-                });
-              }
-            })();
+
+                } catch (error) {
+                  sendMessage({
+                    type: "JS_ERROR",
+                    message:
+                      error && error.message
+                        ? error.message
+                        : String(error)
+                  });
+                }
+                })();
           </script>
         </body>
       </html>
@@ -987,12 +1121,31 @@ export default function MapScreen() {
       return;
     }
 
-    const latitude = Number(busLocation.latitude);
+    const gpsFix = busLocation.gpsFix ?? (busLocation as any).gps_fix;
 
+    const satelites = Number(busLocation.satelites);
+
+    const latitude = Number(busLocation.latitude);
     const longitude = Number(busLocation.longitude);
 
-    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-      console.warn("Coordenadas inválidas do ônibus:", busLocation);
+    if (
+      gpsFix !== true ||
+      !Number.isFinite(satelites) ||
+      satelites < 4 ||
+      !Number.isFinite(latitude) ||
+      !Number.isFinite(longitude) ||
+      latitude === 0 ||
+      longitude === 0
+    ) {
+      console.log(
+        "Localização ignorada: GPS sem fix ou menos de 4 satélites.",
+        {
+          gpsFix,
+          satelites,
+          latitude,
+          longitude,
+        },
+      );
 
       return;
     }

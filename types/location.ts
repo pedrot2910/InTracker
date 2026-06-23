@@ -5,6 +5,7 @@ export interface LocationData {
   longitude: number;
   velocidade: number;
   gpsFix: boolean;
+  gps_fix: boolean;
   hdop: number;
   satelites: number;
   createdAt?: string;
