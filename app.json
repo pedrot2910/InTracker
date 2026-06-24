@@ -13,17 +13,14 @@
         "googleMapsApiKey": "AIzaSyBJYMSpc_CZLfcxF2TeuVMBk1JO48Wxbqc"
       },
       "supportsTablet": true,
-      "bundleIdentifier": "com.pedrot2910.ReUse",
+      "bundleIdentifier": "com.ufcsobral.intracker",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSLocationWhenInUseUsageDescription": "O InTracker usa sua localização para mostrar sua posição no mapa em relação ao ônibus."
       }
     },
     "android": {
-      "permissions": [
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
-      ],
+      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"],
       "backgroundColor": "#f4f7f5",
       "config": {
         "googleMaps": {
@@ -61,8 +58,7 @@
       "expo-image",
       "expo-web-browser",
       "@maplibre/maplibre-react-native",
-      "expo-dev-client",
-      "@sentry/react-native"
+      "expo-dev-client"
     ],
     "experiments": {
       "typedRoutes": true,
@@ -72,11 +68,6 @@
       "router": {},
       "eas": {
         "projectId": "b6736536-92e6-4005-924c-81cd5fa2cd9a"
-      },
-      "expo-navigation-bar": {
-        "enforceContrast": false,
-        "style": "light",
-        "hidden": true
       }
     },
     "owner": "pedrot2910"
