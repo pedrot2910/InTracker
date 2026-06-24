@@ -20,7 +20,12 @@
       }
     },
     "android": {
-      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"],
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ],
       "backgroundColor": "#f4f7f5",
       "config": {
         "googleMaps": {
@@ -70,6 +75,12 @@
         "projectId": "b6736536-92e6-4005-924c-81cd5fa2cd9a"
       }
     },
-    "owner": "pedrot2910"
+    "owner": "pedrot2910",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/b6736536-92e6-4005-924c-81cd5fa2cd9a"
+    }
   }
 }
