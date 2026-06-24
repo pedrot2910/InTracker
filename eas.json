@@ -9,7 +9,7 @@
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_API_URL": "https://intra-tracker-backend.onrender.com",
-        "EXPO_PUBLIC_WS_URL": "wss//intra-tracker-backend.onrender.com/ws"
+        "EXPO_PUBLIC_WS_URL": "wss://intra-tracker-backend.onrender.com/ws"
       }
     },
     "preview": {
@@ -19,7 +19,7 @@
       },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://intra-tracker-backend.onrender.com",
-        "EXPO_PUBLIC_WS_URL": "wss//intra-tracker-backend.onrender.com/ws"
+        "EXPO_PUBLIC_WS_URL": "wss://intra-tracker-backend.onrender.com/ws"
       }
     },
     "production": {
@@ -29,7 +29,7 @@
       },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://intra-tracker-backend.onrender.com",
-        "EXPO_PUBLIC_WS_URL": "wss//intra-tracker-backend.onrender.com/ws"
+        "EXPO_PUBLIC_WS_URL": "wss://intra-tracker-backend.onrender.com/ws"
       }
     }
   },
