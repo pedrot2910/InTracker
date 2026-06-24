@@ -20,7 +20,10 @@
       }
     },
     "android": {
-      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"],
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ],
       "backgroundColor": "#f4f7f5",
       "config": {
         "googleMaps": {
@@ -54,19 +57,12 @@
           }
         }
       ],
-      [
-        "expo-navigation-bar",
-        {
-          "hidden": true,
-          "style": "light",
-          "enforceContrast": false
-        }
-      ],
       "expo-font",
       "expo-image",
       "expo-web-browser",
       "@maplibre/maplibre-react-native",
-      "expo-dev-client"
+      "expo-dev-client",
+      "@sentry/react-native"
     ],
     "experiments": {
       "typedRoutes": true,
